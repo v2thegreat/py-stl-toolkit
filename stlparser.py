@@ -1,5 +1,3 @@
-#!/usr/bin/python2.7
-
 """
 This module provides basic STL parsing, saving, displaying, and post-processing capabilities
 
@@ -7,6 +5,8 @@ File format described at http://people.sc.fsu.edu/~jburkardt/data/stlb/stlb.html
 Bytecount described at http://en.wikipedia.org/wiki/STL_(file_format)
 Help and original code from: http://stackoverflow.com/questions/7566825/python-parsing-binary-stl-file
 """
+import stl
+from stl import mesh
 
 import struct
 from mpl_toolkits.mplot3d import Axes3D
@@ -54,7 +54,7 @@ class SolidSTL(object):
         self.edges = self.__getEdges()
 
     def iterTriangles(self):
-        for i in xrange(len(self.triangles)):
+        for i in range(len(self.triangles)):
             yield self.triangles[i], self.norms[i]
 
     def __getEdges(self):
@@ -117,12 +117,12 @@ def createVerticalCuboid(topPoint, edgeLength=1.0):
     bottomMask = np.tile( [1,1,0], [4,1] )    
     bottomSurface = np.multiply(bottomMask, topSurface)
 
-    topSurface = map(lambda x: tuple(x), topSurface)
-    bottomSurface = map(lambda x: tuple(x), bottomSurface)
+    topSurface = list(map(lambda x: tuple(x), topSurface))
+    bottomSurface = list(map(lambda x: tuple(x), bottomSurface))
     
     # join the 8 points as 8 triangles
     triangles = []
-    for i in xrange(len(topSurface)):
+    for i in range(len(topSurface)):
         # These must be listed in clockwise fashion in relation to the face's normal, using the RHR
         triangles.append( (topSurface[i], bottomSurface[i], bottomSurface[(i+1) % 4]) )
         triangles.append( (bottomSurface[(i+1) % 4], topSurface[(i+1) % 4], topSurface[i]) )
@@ -151,7 +151,6 @@ def addCuboidSupports(stlsolid, area=1.0):
     for triangle, norm in stlsolid.iterTriangles():
         centroid = __getTriangleCentroid(triangle)
         supportDirs = __getSupportDirection(centroid, norm, 10)
-        
         if not supportDirs is None:
             triangles, norms = createVerticalCuboid(centroid)
             stlsolid.addTriangles(triangles, norms)
@@ -205,18 +204,29 @@ def __getSupportDirection(origin, vector, scale=1.0):
     # Does not require support material, don't plot anything
     return None
     
-def display(stlsolid, showNorms=True, showSupportDirections=False):
+def display(stlsolid, file, showNorms=True, showSupportDirections=False):
     """
     Renders the solid and normal vectors using matplotlib
     """
     fig = plt.figure()
     #ax = Axes3D(fig)
     ax = fig.gca(projection='3d')
+    mesh_body = mesh.Mesh.from_file(file)
     
+    dimentions = find_mins_maxs(mesh_body)
+    min_dimentions = min(dimentions)
+    max_dimentions = max(dimentions)
+
+    ax.set_xlim(min_dimentions, max_dimentions)
+    ax.set_ylim(min_dimentions, max_dimentions)
+    ax.set_zlim(min_dimentions, max_dimentions)
+    ax.grid(False)
+    ax.set_axis_off()
+
     triangles = stlsolid.triangles
     norms = stlsolid.norms
 
-    for i in xrange(len(triangles)):
+    for i in range(len(triangles)):
             
         triangle = triangles[i]
        
@@ -227,7 +237,7 @@ def display(stlsolid, showNorms=True, showSupportDirections=False):
         if showNorms or showSupportDirections:
             centroid = __getTriangleCentroid(triangle)
             norm = norms[i]
-        
+            
             if showNorms:
                 xs, ys, zs = __getNormalLine(centroid, norm, 10)
                 ax.plot(xs, ys, zs)
@@ -237,7 +247,7 @@ def display(stlsolid, showNorms=True, showSupportDirections=False):
                 if not supportDirs is None:
                     xs, ys, zs = supportDirs
                     ax.plot(xs, ys, zs)
-
+    plt.tight_layout()
     plt.show()
 
 def loadBSTL(bstl):
@@ -245,10 +255,11 @@ def loadBSTL(bstl):
     Loads triangles from file, input can be a file path or a file handler
     Returns a SolidSTL object
     """
-
+    """
     if isinstance(bstl, file):
         f = bstl
-    elif isinstance(bstl, str):
+    """
+    if isinstance(bstl, str):
         f = open(bstl, 'rb')
     else:
         raise TypeError("must be a string or file")
@@ -256,12 +267,12 @@ def loadBSTL(bstl):
     header = f.read(80)
     numTriangles = struct.unpack("@i", f.read(4))
     numTriangles = numTriangles[0]
-
+    
     triangles = [(0,0,0)]*numTriangles # prealloc, slightly faster than append
     norms = [(0,0,0)]*numTriangles
     bytecounts = [(0,0,0)]*numTriangles
-
-    for i in xrange(numTriangles):
+    
+    for i in range(numTriangles):
         # facet records
         norms[i] = struct.unpack("<3f", f.read(12))
         vertex1 = struct.unpack("<3f", f.read(12))
@@ -278,10 +289,10 @@ def __shiftUp(stlsolid, amt=5.0):
     This is purely for testing purposes (force a situation where supports are needed),
     not really sure why anybody would actually use this
     """
-    for i in xrange(len(stlsolid.triangles)):
+    for i in range(len(stlsolid.triangles)):
         triangle = list(stlsolid.triangles[i])
 
-        for v in xrange(len(triangle)):
+        for v in range(len(triangle)):
             triangle[v] = list(triangle[v])
             triangle[v][2] += amt
             triangle[v] = tuple(triangle[v])
@@ -345,7 +356,7 @@ def saveSTL(stlsolid, outfilename):
     with open(outfilename, "w") as f:
 
         f.write("solid "+outfilename+"\n")
-        for i in xrange(len(triangles)):
+        for i in range(len(triangles)):
             norm = norms[i]
             triangle = triangles[i]
             f.write("facet normal %f %f %f\n"%(norm))
@@ -357,9 +368,34 @@ def saveSTL(stlsolid, outfilename):
             f.write("endfacet\n")
         f.write("endsolid "+outfilename+"\n")
 
+def find_mins_maxs(obj):
+    """
+    Brutally plagarised from numpy-stl: https://github.com/WoLpH/numpy-stl
+    """
+
+    minx = maxx = miny = maxy = minz = maxz = None
+    for p in obj.points:
+        # p contains (x, y, z)
+        if minx is None:
+            minx = p[stl.Dimension.X]
+            maxx = p[stl.Dimension.X]
+            miny = p[stl.Dimension.Y]
+            maxy = p[stl.Dimension.Y]
+            minz = p[stl.Dimension.Z]
+            maxz = p[stl.Dimension.Z]
+        else:
+            maxx = max(p[stl.Dimension.X], maxx)
+            minx = min(p[stl.Dimension.X], minx)
+            maxy = max(p[stl.Dimension.Y], maxy)
+            miny = min(p[stl.Dimension.Y], miny)
+            maxz = max(p[stl.Dimension.Z], maxz)
+            minz = min(p[stl.Dimension.Z], minz)
+    return minx, maxx, miny, maxy, minz, maxz
+
 if __name__ == "__main__":
     model = loadBSTL(sys.argv[1])
+    # file  = r"C:\Users\aliab\Google Drive\Work\W.O.L.F\ARM\Arm Lower Base\STL File\Arm Base-1.STL"
+    # model = loadBSTL(file)
     __shiftUp(model,5)
     addCuboidSupports(model)
-    display(model)
-
+    display(model, file = sys.argv[1], showNorms = False, showSupportDirections = False)
